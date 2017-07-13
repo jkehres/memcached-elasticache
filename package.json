@@ -1,0 +1,30 @@
+{
+  "name": "memcached-elasticache",
+  "version": "1.0.0",
+  "description": "A memcached client with support for auto-discovery of AWS ElastiCache nodes",
+  "author": "Jeff Kehres <jeff.kehres@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jkehres/memcached-elasticache.git"
+  },
+  "keywords": [
+    "elasticache",
+    "memcached",
+    "autodiscovery"
+  ],
+  "main": "index.js",
+  "scripts": {
+    "lint": "eslint *.js test",
+    "test": "mocha"
+  },
+  "devDependencies": {
+    "chai": "4.1.0",
+    "eslint": "4.2.0",
+    "mocha": "3.4.2"
+  },
+  "dependencies": {
+    "lodash": "4.17.4",
+    "memcached": "2.2.2"
+  }
+}
