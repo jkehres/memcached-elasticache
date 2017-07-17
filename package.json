@@ -19,12 +19,15 @@
     "test": "mocha"
   },
   "devDependencies": {
-    "chai": "4.1.0",
-    "eslint": "4.2.0",
-    "mocha": "3.4.2"
+    "chai": "^4.1.0",
+    "eslint": "^4.2.0",
+    "mocha": "^3.4.2",
+    "proxyquire": "^1.8.0",
+    "sinon": "^2.3.8"
   },
   "dependencies": {
-    "lodash": "4.17.4",
-    "memcached": "2.2.2"
+    "bluebird": "^3.5.0",
+    "lodash": "^4.17.4",
+    "memcached": "^2.2.2"
   }
 }

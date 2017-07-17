@@ -1,25 +1,44 @@
 'use strict';
 
 const EventEmitter = require('events');
+const Promise = require('bluebird');
 const Memcached = require('memcached');
 const _ = require('lodash');
 
 const GET_CLUSTER_COMMAND_OLD = 'get AmazonElastiCache:cluster';
 const GET_CLUSTER_COMMAND_NEW = 'config get cluster';
 
-const DEFAULT_OPTIONS = {
-    autoDiscover: true,
-    autoDiscoverInterval: 60000
-};
+const DEFAULT_AUTO_DISCOVER = true;
+const DEFAULT_AUTO_DISCOVER_INTERVAL = 60000;
+
+function getOption(options, name, defaultValue) {
+	if (_.has(options, name)) {
+		return options[name];
+	} else {
+		return defaultValue;
+	}
+}
+
+function deleteOption(options, name) {
+	if (_.has(options, name)) {
+		delete options[name];
+	}
+}
 
 class Client extends EventEmitter {
 
     constructor(configEndpoint, options) {
         super();
 
-        this._options = Object.assign({}, DEFAULT_OPTIONS, options);
+		// extract outer client options so they aren't passed to inner client
+		const autoDiscover = getOption(options, 'autoDiscover', DEFAULT_AUTO_DISCOVER);
+		const autoDiscoverInterval = getOption(options, 'autoDiscoverInterval', DEFAULT_AUTO_DISCOVER_INTERVAL);
+		this._options = _.clone(options);
+		deleteOption(this._options, 'autoDiscover');
+		deleteOption(this._options, 'autoDiscoverInterval');
+
         this._configEndpoint = configEndpoint;
-        this._nodes = [];
+        this._clusterVersion = null;
 
         // when auto-discovery is enabled, the configuration endpoint is a valid
         // cluster node so use it to for the initial inner client until cluser
@@ -29,9 +48,9 @@ class Client extends EventEmitter {
         this._createInnerClient(configEndpoint);
 
         // start auto-discovery, if enabled
-        if (this._options.autoDiscover) {
+        if (autoDiscover) {
             this._getCluster();
-            this._timer = setInterval(this._getCluster.bind(this), this._options.autoDiscoverInterval);
+            this._timer = setInterval(this._getCluster.bind(this), autoDiscoverInterval);
         }
     }
 
@@ -89,13 +108,13 @@ class Client extends EventEmitter {
             });
         })
         .then((data) => this._parseNodes(data))
-        .then((nodes) => {
+        .then((data) => {
 
 			// don't update inner client if nodes have not changed
-            if (!_.isEqual(this._nodes, nodes)) {
-                this._nodes = nodes;
-                this._createInnerClient(nodes);
-                this.emit('autoDiscover', nodes);
+            if (this._clusterVersion === null || data.version > this._clusterVersion) {
+                this._clusterVersion = data.version;
+                this._createInnerClient(data.nodes);
+                this.emit('autoDiscover', data.nodes);
             }
             configClient.end();
         })
@@ -106,17 +125,24 @@ class Client extends EventEmitter {
     }
 
     _parseNodes(data) {
-        return data.split('\n')[1].split(' ').map((entry) => {
+		const lines = data.split('\n');
+		const version = parseInt(lines[0]);
+		const nodes = lines[1].split(' ').map((entry) => {
             const parts = entry.split('|');
             return `${parts[0]}:${parts[2]}`;
-        }).sort();
+        });
+
+        return {
+			version,
+			nodes
+		};
     }
 
     _createInnerClient(servers) {
 
         // (re)create inner client object - do not call end() on previous inner
         // client as this will cancel any in-flight operations
-        this._innerClient = new Memcached(servers, this.options);
+        this._innerClient = new Memcached(servers, this._options);
 
         // passthrough method calls from outer object to inner object - except
         // end(), which we explicitly override
