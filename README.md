@@ -17,7 +17,7 @@ const memcached = new Memcached(Server locations, options);
 
 ### Server locations
 
-When auto-discovery is enabled (default), specify the configuration endpoint of the cluster as a string in the following format: `hostname:port`. The configuration endpoint will be polled at regular intervals (see `autoDiscoverInterval` option) to  detect changes to the cluster. Nodes will be automatically added/removed from the client as necessary.
+When auto-discovery is enabled (default), specify the configuration endpoint of the cluster as a string in the following format: `hostname:port`. The configuration endpoint will be polled at regular intervals (see `autoDiscoverInterval` option) to detect changes to the cluster. Nodes will be automatically added/removed from the client accordingly.
 
 When auto-discovery is disabled, same as [`memcached`](https://github.com/3rd-Eden/memcached) module - specify one or more nodes that make up your cluster.
 
