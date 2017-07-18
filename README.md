@@ -31,7 +31,7 @@ A flag indicating whether the client should automatically discover the nodes of 
 
 #### `autoDiscoverInterval`
 
-The number of milliseconds between attempts to discover changes to the cluster - added/removed nodes. When auto-discovery is disabled, no polling occurs and this value is ignored. Defaults to `60000` (i.e. on minute).
+The number of milliseconds between attempts to discover changes to the cluster - added/removed nodes. When auto-discovery is disabled, no polling occurs and this value is ignored. Defaults to `60000` (i.e. one minute).
 
 ## API
 
