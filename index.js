@@ -10,6 +10,7 @@ const GET_CLUSTER_COMMAND_NEW = 'config get cluster';
 
 const DEFAULT_AUTO_DISCOVER = true;
 const DEFAULT_AUTO_DISCOVER_INTERVAL = 60000;
+const DEFAULT_AUTO_DISCOVER_OVERRIDES_REMOVE = false;
 
 function getOption(options, name, defaultValue) {
 	if (_.has(options, name)) {
@@ -33,12 +34,21 @@ class Client extends EventEmitter {
 		// extract outer client options so they aren't passed to inner client
 		const autoDiscover = getOption(options, 'autoDiscover', DEFAULT_AUTO_DISCOVER);
 		const autoDiscoverInterval = getOption(options, 'autoDiscoverInterval', DEFAULT_AUTO_DISCOVER_INTERVAL);
+		const autoDiscoverOverridesRemove = getOption(options, 'autoDiscoverOverridesRemove', DEFAULT_AUTO_DISCOVER_OVERRIDES_REMOVE);
 		this._options = _.clone(options);
 		deleteOption(this._options, 'autoDiscover');
 		deleteOption(this._options, 'autoDiscoverInterval');
+		deleteOption(this._options, 'autoDiscoverOverridesRemove');
 
         this._configEndpoint = configEndpoint;
-        this._clusterVersion = null;
+        this._nodeSet = new Set();
+
+		// keep our set of nodes in sync with the inner client's set of nodes should it remove a node
+		if (autoDiscoverOverridesRemove) {
+			this.on('remove', (details) => {
+				this._nodeSet.delete(details.server);
+			});
+		}
 
         // when auto-discovery is enabled, the configuration endpoint is a valid
         // cluster node so use it to for the initial inner client until cluser
@@ -68,7 +78,14 @@ class Client extends EventEmitter {
     _getCluster() {
 
         // connect to configuration endpoint
-        const configClient = new Memcached(this._configEndpoint, this._options);
+        const configClient = new Memcached(this._configEndpoint, {
+			// attempt to contact server 3 times in 3 seconds before marking it dead
+			timeout: 1000,
+			retries: 2,
+			factor: 1,
+			minTimeout: 0,
+			failures: 0
+		});
 
         new Promise((resolve, reject) => {
 
@@ -108,13 +125,14 @@ class Client extends EventEmitter {
             });
         })
         .then((data) => this._parseNodes(data))
-        .then((data) => {
+        .then((nodes) => {
 
-			// don't update inner client if nodes have not changed
-            if (this._clusterVersion === null || data.version > this._clusterVersion) {
-                this._clusterVersion = data.version;
-                this._createInnerClient(data.nodes);
-                this.emit('autoDiscover', data.nodes);
+			// update inner client only if nodes have changed
+			const nodeSet = new Set(nodes);
+            if (!_.isEqual(this._nodeSet, nodeSet)) {
+                this._nodeSet = nodeSet;
+                this._createInnerClient(nodes);
+                this.emit('autoDiscover', nodes);
             }
             configClient.end();
         })
@@ -126,16 +144,12 @@ class Client extends EventEmitter {
 
     _parseNodes(data) {
 		const lines = data.split('\n');
-		const version = parseInt(lines[0]);
 		const nodes = lines[1].split(' ').map((entry) => {
             const parts = entry.split('|');
             return `${parts[0]}:${parts[2]}`;
         });
 
-        return {
-			version,
-			nodes
-		};
+        return nodes;
     }
 
     _createInnerClient(servers) {

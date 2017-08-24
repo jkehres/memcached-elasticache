@@ -133,7 +133,11 @@ describe('Client', () => {
         const Memcached = getMemcachedElastiCache(classStub);
 
 		/* eslint no-unused-vars:0 */
-		const memcached = new Memcached(DUMMY_ENDPOINT, {autoDiscover: false});
+		const memcached = new Memcached(DUMMY_ENDPOINT, {
+			autoDiscover: false,
+			autoDiscoverInterval: 30000,
+			autoDiscoverOverridesRemove: true
+		});
 
         assert.isTrue(classStub.calledWith(DUMMY_ENDPOINT));
 	});
@@ -145,7 +149,12 @@ describe('Client', () => {
         const Memcached = getMemcachedElastiCache(classStub);
 
 		/* eslint no-unused-vars:0 */
-		const memcached = new Memcached(DUMMY_ENDPOINT, {autoDiscover: false, timeout: 1000});
+		const memcached = new Memcached(DUMMY_ENDPOINT, {
+			autoDiscover: false,
+			autoDiscoverInterval: 30000,
+			autoDiscoverOverridesRemove: true,
+			timeout: 1000
+		});
 
 		assert.isTrue(classStub.calledWith(DUMMY_ENDPOINT, {timeout: 1000}));
 	});
@@ -384,13 +393,14 @@ describe('Client', () => {
 		const Memcached = getMemcachedElastiCache(classStub);
 
 		mockVersionSuccess(instanceStubs[1], TEST_VERSION);
-		mockCommandSuccess(instanceStubs[1], TEST_COMMAND, 1, [DUMMY_NODE1]);
+		mockCommandSuccess(instanceStubs[1], TEST_COMMAND, 0, [DUMMY_NODE1, DUMMY_NODE2]);
 
 		mockVersionSuccess(instanceStubs[3], TEST_VERSION);
-		mockCommandSuccess(instanceStubs[3], TEST_COMMAND, 0, [DUMMY_NODE1, DUMMY_NODE2]);
+		mockCommandSuccess(instanceStubs[3], TEST_COMMAND, 1, [DUMMY_NODE2, DUMMY_NODE1]);
 
 		const nodes = [
-			`${DUMMY_NODE1.hostname}:${DUMMY_NODE1.port}`
+			`${DUMMY_NODE1.hostname}:${DUMMY_NODE1.port}`,
+			`${DUMMY_NODE2.hostname}:${DUMMY_NODE2.port}`
 		];
 		const successCallback = sinon.mock().once();
 		const failureCallback = sinon.mock().never();
@@ -472,6 +482,126 @@ describe('Client', () => {
 			instanceStubs[2].set.callsArgWith(3, null);
 			const callback = sinon.mock().once().withArgs(null);
 			memcached.set('foo', 'bar', 10, callback);
+
+			done();
+		}, 60010);
+		this.clock.tick(60011);
+	});
+
+	it('should re-discover node after client removed it', (done) => {
+
+		const instanceStubs = createMemcachedInstanceStubs(5);
+		const classStub = createMemachedClassStub(instanceStubs);
+		const Memcached = getMemcachedElastiCache(classStub);
+
+		mockVersionSuccess(instanceStubs[1], TEST_VERSION);
+		mockCommandSuccess(instanceStubs[1], TEST_COMMAND, 0, [DUMMY_NODE1, DUMMY_NODE2]);
+
+		mockVersionSuccess(instanceStubs[3], TEST_VERSION);
+		mockCommandSuccess(instanceStubs[3], TEST_COMMAND, 0, [DUMMY_NODE1, DUMMY_NODE2]);
+
+		const nodes = [
+			`${DUMMY_NODE1.hostname}:${DUMMY_NODE1.port}`,
+			`${DUMMY_NODE2.hostname}:${DUMMY_NODE2.port}`
+		];
+		const successCallback = sinon.mock().twice();
+		const failureCallback = sinon.mock().never();
+
+		const memcached = new Memcached(DUMMY_ENDPOINT, {autoDiscoverOverridesRemove: true});
+		memcached.on('autoDiscover', successCallback);
+		memcached.on('autoDiscoverFailure', failureCallback);
+
+		// wait for first auto-discovery to complete
+		setTimeout(() => {
+			// simulate internal remove event
+			instanceStubs[2].emit('remove', {
+				server: `${DUMMY_NODE1.hostname}:${DUMMY_NODE1.port}`,
+				tokens: [DUMMY_NODE1.port, DUMMY_NODE1.hostname],
+				messages: ['Error: foobar'],
+				totalReconnectsAttempted: 0,
+				totalReconnectsSuccess: 0,
+				totalReconnectsFailed: 0,
+				totalDownTime: 0
+			});
+		}, 10);
+
+		// wait for auto-discovery timer and Promise chain to resolve
+		setTimeout(() => {
+			assert.isTrue(successCallback.getCall(0).calledWith(nodes));
+			assert.isTrue(successCallback.getCall(1).calledWith(nodes));
+
+			assert.equal(instanceStubs.length, classStub.callCount);
+			assert.isTrue(classStub.getCall(0).calledWith(DUMMY_ENDPOINT));
+			assert.isTrue(classStub.getCall(1).calledWith(DUMMY_ENDPOINT));
+			assert.isTrue(classStub.getCall(2).calledWith(nodes));
+			assert.isTrue(classStub.getCall(3).calledWith(DUMMY_ENDPOINT));
+			assert.isTrue(classStub.getCall(4).calledWith(nodes));
+
+			// verify inner client was recreated with discovered nodes
+			instanceStubs[2].set.callsArgWith(3, null);
+			const callback1 = sinon.mock().once().withArgs(null);
+			memcached.set('foo', 'bar', 10, callback1);
+
+			instanceStubs[4].set.callsArgWith(3, null);
+			const callback2 = sinon.mock().once().withArgs(null);
+			memcached.set('foo', 'bar', 10, callback2);
+
+			done();
+		}, 60010);
+		this.clock.tick(60011);
+	});
+
+	it('should not re-discover node after client removed it', (done) => {
+
+		const instanceStubs = createMemcachedInstanceStubs(4);
+		const classStub = createMemachedClassStub(instanceStubs);
+		const Memcached = getMemcachedElastiCache(classStub);
+
+		mockVersionSuccess(instanceStubs[1], TEST_VERSION);
+		mockCommandSuccess(instanceStubs[1], TEST_COMMAND, 0, [DUMMY_NODE1, DUMMY_NODE2]);
+
+		mockVersionSuccess(instanceStubs[3], TEST_VERSION);
+		mockCommandSuccess(instanceStubs[3], TEST_COMMAND, 0, [DUMMY_NODE1, DUMMY_NODE2]);
+
+		const nodes = [
+			`${DUMMY_NODE1.hostname}:${DUMMY_NODE1.port}`,
+			`${DUMMY_NODE2.hostname}:${DUMMY_NODE2.port}`
+		];
+		const successCallback = sinon.mock().once();
+		const failureCallback = sinon.mock().never();
+
+		const memcached = new Memcached(DUMMY_ENDPOINT);
+		memcached.on('autoDiscover', successCallback);
+		memcached.on('autoDiscoverFailure', failureCallback);
+
+		// wait for first auto-discovery to complete
+		setTimeout(() => {
+			// simulate internal remove event
+			instanceStubs[2].emit('remove', {
+				server: `${DUMMY_NODE1.hostname}:${DUMMY_NODE1.port}`,
+				tokens: [DUMMY_NODE1.port, DUMMY_NODE1.hostname],
+				messages: ['Error: foobar'],
+				totalReconnectsAttempted: 0,
+				totalReconnectsSuccess: 0,
+				totalReconnectsFailed: 0,
+				totalDownTime: 0
+			});
+		}, 10);
+
+		// wait for auto-discovery timer and Promise chain to resolve
+		setTimeout(() => {
+			assert.isTrue(successCallback.getCall(0).calledWith(nodes));
+
+			assert.equal(instanceStubs.length, classStub.callCount);
+			assert.isTrue(classStub.getCall(0).calledWith(DUMMY_ENDPOINT));
+			assert.isTrue(classStub.getCall(1).calledWith(DUMMY_ENDPOINT));
+			assert.isTrue(classStub.getCall(2).calledWith(nodes));
+			assert.isTrue(classStub.getCall(3).calledWith(DUMMY_ENDPOINT));
+
+			// verify inner client was recreated with discovered nodes
+			instanceStubs[2].set.callsArgWith(3, null);
+			const callback1 = sinon.mock().once().withArgs(null);
+			memcached.set('foo', 'bar', 10, callback1);
 
 			done();
 		}, 60010);

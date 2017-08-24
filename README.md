@@ -33,6 +33,10 @@ A flag indicating whether the client should automatically discover the nodes of 
 
 The number of milliseconds between attempts to discover changes to the cluster - added/removed nodes. When auto-discovery is disabled, no polling occurs and this value is ignored. Defaults to `60000` (i.e. one minute).
 
+#### `autoDiscoverOverridesRemove`
+
+A flag indicating whether a dead node removed via the `remove` config option can be re-added by auto-discovery. When auto-discovery is disabled, this value is ignored. Defaults to `false`.
+
 ## API
 
 Same as [`memcached`](https://github.com/3rd-Eden/memcached) module - except private methods are not exposed.
