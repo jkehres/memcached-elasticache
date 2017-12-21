@@ -239,6 +239,42 @@ describe('Client', () => {
 		});
 	});
 
+	it('should sort auto-discover nodes', (done) => {
+
+		const instanceStubs = createMemcachedInstanceStubs(3);
+		const classStub = createMemachedClassStub(instanceStubs);
+		const Memcached = getMemcachedElastiCache(classStub);
+
+		mockVersionSuccess(instanceStubs[1], TEST_VERSION);
+		mockCommandSuccess(instanceStubs[1], TEST_COMMAND, 0, [DUMMY_NODE2, DUMMY_NODE1]);
+
+		const nodes = [
+			`${DUMMY_NODE1.hostname}:${DUMMY_NODE1.port}`,
+			`${DUMMY_NODE2.hostname}:${DUMMY_NODE2.port}`
+		];
+		const successCallback = sinon.mock().once().withArgs(nodes);
+		const failureCallback = sinon.mock().never();
+
+		const memcached = new Memcached(DUMMY_ENDPOINT);
+		memcached.on('autoDiscover', successCallback);
+		memcached.on('autoDiscoverFailure', failureCallback);
+
+		// wait for Promise chain to resolve
+		setTimeout(() => {
+			assert.equal(instanceStubs.length, classStub.callCount);
+			assert.isTrue(classStub.getCall(0).calledWith(DUMMY_ENDPOINT));
+			assert.isTrue(classStub.getCall(1).calledWith(DUMMY_ENDPOINT));
+			assert.isTrue(classStub.getCall(2).calledWith(nodes));
+
+			// verify inner client was recreated with discovered nodes
+			instanceStubs[2].set.callsArgWith(3, null);
+			const callback = sinon.mock().once().withArgs(null);
+			memcached.set('foo', 'bar', 10, callback);
+
+			done();
+		}, 10);
+		this.clock.tick(11);
+	});
 
 	it('should fail auto-discovery when version() returns an error', (done) => {
 

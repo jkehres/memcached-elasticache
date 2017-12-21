@@ -149,7 +149,8 @@ class Client extends EventEmitter {
             return `${parts[0]}:${parts[2]}`;
         });
 
-        return nodes;
+		// make sure node order is consistent so key hashing is consistent
+        return nodes.sort();
     }
 
     _createInnerClient(servers) {
